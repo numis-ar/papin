@@ -1,0 +1,55 @@
+#!/usr/bin/make -f
+
+CARGO_TARGET_DIR ?= $(CURDIR)/target
+export CARGO_TARGET_DIR
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	cargo build --release --manifest-path Cargo.toml
+
+override_dh_auto_test:
+	# Rust tests are run during development; skip in the package build
+	# (they spawn helper processes and need no network here, but keep the
+	# build minimal). Set DEB_BUILD_OPTIONS=nocheck as usual to skip anyway.
+
+override_dh_auto_install:
+	install -D -m 0755 $(CARGO_TARGET_DIR)/release/papin \
+		debian/papin-cli/usr/bin/papin
+	install -D -m 0755 $(CARGO_TARGET_DIR)/release/papin-gateway \
+		debian/papin-gateway/usr/lib/papin/papin-gateway
+	install -D -m 0755 $(CARGO_TARGET_DIR)/release/papin-acp-enter \
+		debian/papin-gateway/usr/lib/papin/papin-acp-enter
+	# Setuid bit is applied in postinst (dh cannot set it at install time).
+	install -D -m 0755 -o root -g root $(CARGO_TARGET_DIR)/release/papin-enroll-helper \
+		debian/papin-gateway/usr/local/lib/papin/papin-enroll-helper
+	install -D -m 0644 systemd/papin-gateway.service \
+		debian/papin-gateway/usr/lib/systemd/system/papin-gateway.service
+	install -D -m 0644 systemd/papin-agent.socket \
+		debian/papin-gateway/usr/lib/systemd/system/papin-agent.socket
+	install -D -m 0644 systemd/papin-agent@.service \
+		debian/papin-gateway/usr/lib/systemd/system/papin-agent@.service
+	# Conffile seed (dh_installdeb marks files under /etc automatically).
+	install -D -m 0644 debian/gateway.toml \
+		debian/papin-gateway/etc/papin/gateway.toml
+	install -D -m 0644 debian/papin-gateway.tmpfiles \
+		debian/papin-gateway/usr/lib/tmpfiles.d/papin-gateway.conf
+	install -D -m 0644 ../docs/operations.md \
+		debian/papin-gateway/usr/share/doc/papin-gateway/operations.md
+	install -D -m 0755 scripts/add-peer \
+		debian/papin-gateway/usr/sbin/add-peer
+	install -D -m 0755 scripts/e2e.sh \
+		debian/papin-gateway/usr/share/papin-gateway/e2e.sh
+
+# /usr/local is policy-reserved (dh_usrlocal rejects plain files there), but
+# the plan pins the setuid helper to /usr/local/lib/papin/ — the
+# deliberate, documented exception (§7.1). Skip the usrlocal check.
+override_dh_usrlocal:
+
+override_dh_installsystemd:
+	# Template unit papin-agent@.service is socket-activated, never enabled
+	# directly; the socket is enabled. The gateway service is enabled+started.
+	dh_installsystemd --package=papin-gateway --name=papin-gateway
+	dh_installsystemd --package=papin-gateway --name=papin-agent.socket
+	dh_installsystemd --package=papin-gateway --name=papin-agent --no-enable --no-start

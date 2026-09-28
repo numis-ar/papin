@@ -1,0 +1,7 @@
+[package]
+name = "papin-enroll-helper"
+version = "0.1.0"
+edition = "2021"
+description = "setuid-root WireGuard peer enrollment helper (apply <peers-file> only)"
+
+[dependencies]

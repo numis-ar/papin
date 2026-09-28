@@ -1,0 +1,4 @@
+# Runtime dirs under /run (tmpfs): the spawn socket's parent and the
+# enrollment helper's peers directory (§7.1).
+d /run/papin 0755 root root -
+d /run/papin/wg-peers 0770 root papin -

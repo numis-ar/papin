@@ -1,0 +1,16 @@
+papin (0.2.0-1) unstable; urgency=medium
+
+  * Project renamed to Papin; packages are now papin-cli and papin-gateway
+    (user/group papin; runtime dirs under /etc/papin, /var/lib/papin,
+    /run/papin; systemd units papin-gateway.service, papin-agent.socket,
+    papin-agent@.service).
+
+ -- Papin Harness Dev <dev@numis.ar>  Tue, 29 Sep 2026 06:00:00 +0000
+
+papin (0.1.0-1) unstable; urgency=medium
+
+  * Initial packaging: papin-cli terminal client and the papin-gateway server
+    (gateway daemon, chroot wrapper, setuid enrollment helper, systemd
+    socket-activated agent units, ops tooling and docs).
+
+ -- Papin Harness Dev <dev@numis.ar>  Sun, 28 Sep 2026 05:30:00 +0000

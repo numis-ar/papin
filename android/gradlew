@@ -1,0 +1,24 @@
+#!/bin/sh
+
+# Gradle start up script — WITHOUT the wrapper jar (it is a binary artifact
+# this repo cannot author; generate it once with a system gradle, see
+# android/README.md "First build"). Until then this script explains how.
+
+DIR="$(cd "$(dirname "$0")" && pwd)"
+JAR="$DIR/gradle/wrapper/gradle-wrapper.jar"
+
+if [ ! -f "$JAR" ]; then
+    cat >&2 <<'EOF'
+error: gradle-wrapper.jar is not committed (binary artifact).
+
+First build on a machine with a system Gradle:
+    cd android
+    gradle wrapper --gradle-version 8.9   # generates gradle/wrapper/gradle-wrapper.jar
+    ./gradlew build
+
+See README.md for details.
+EOF
+    exit 1
+fi
+
+exec java -jar "$JAR" "$@"

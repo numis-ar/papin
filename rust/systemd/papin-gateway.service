@@ -1,0 +1,22 @@
+[Unit]
+Description=papin-gateway: per-agent ACP facade and proxy
+Documentation=file:/usr/local/share/doc/papin-gateway/operations.md
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/lib/papin/papin-gateway --config /etc/papin/gateway.toml
+User=papin
+Group=papin
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+# The gateway talks to the agent spawn socket (group papin-gateway) and its
+# state dirs; it holds no capabilities and never talks to systemd at runtime.
+SupplementaryGroups=
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target

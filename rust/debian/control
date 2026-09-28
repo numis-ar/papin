@@ -1,0 +1,29 @@
+Source: papin
+Section: net
+Priority: optional
+Maintainer: Papin Harness Dev <dev@numis.ar>
+Build-Depends: debhelper-compat (= 13), cargo, rustc
+Standards-Version: 4.6.2
+Rules-Requires-Root: binary-targets
+Vcs-Browser: https://example.invalid/papin
+Vcs-Git: https://example.invalid/papin.git
+
+Package: papin-cli
+Architecture: amd64
+Depends: ${misc:Depends}, ${shlibs:Depends}
+Description: terminal client for the remote Papin agent harness
+ Ratatui chat client for papin-gateway: agent picker, streaming chat with
+ thinking/tool-call/plan components, sessions with session/load resume,
+ headless one-shot prompts, doctor connectivity checks, and agent
+ management. Talks ACP v1 over WebSocket through the gateway.
+ No systemd, no root.
+
+Package: papin-gateway
+Architecture: amd64
+Depends: ${misc:Depends}, ${shlibs:Depends}, adduser, wireguard-tools
+Description: gateway exposing chrooted, socket-activated Papin agents over ACP
+ Per-agent ACP v1 façade and proxy: registry + catalog REST, WebSocket ACP
+ transport, capability policy, transparent crash healing, device-token auth,
+ WireGuard peer enrollment. Ships the papin-acp-enter chroot wrapper (spawned
+ by systemd socket activation) and the setuid papin-enroll-helper — the
+ single root-capable component.

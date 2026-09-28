@@ -1,0 +1,23 @@
+#!/bin/sh
+# postrm for the papin-gateway package: purge state and the system user. Conffiles under
+# /etc are removed by dpkg on purge; the systemd units are handled by the
+# debhelper snippets below.
+set -e
+
+case "$1" in
+    purge)
+        rm -rf /var/lib/papin
+        rm -rf /run/papin
+        if getent passwd papin >/dev/null; then
+            deluser --system papin || true
+        fi
+        if getent group papin >/dev/null; then
+            delgroup --system papin || true
+        fi
+        # Remove the setuid helper copy if the package left it behind.
+        rm -f /usr/local/lib/papin/papin-enroll-helper
+        rmdir /usr/local/lib/papin 2>/dev/null || true
+        ;;
+esac
+
+#DEBHELPER#

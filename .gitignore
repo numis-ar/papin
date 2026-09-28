@@ -1,1 +1,17 @@
 resources/
+# Debian build output (source tree rooted at rust/)
+rust/debian/.debhelper/
+rust/debian/papin-cli/
+rust/debian/papin-gateway/
+rust/debian/files
+rust/debian/*.substvars
+rust/debian/*.debhelper
+rust/debian/*.debhelper.log
+rust/debian/debhelper-build-stamp
+# dpkg-buildpackage artifacts land in the repo root
+/papin-cli_*.deb
+/papin-gateway_*.deb
+/*.buildinfo
+/*.changes
+/*-dbgsym_*.ddeb
+/papin-dbgsym_*.ddeb

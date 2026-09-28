@@ -1,0 +1,11 @@
+[package]
+name = "papin-acp-enter"
+version = "0.1.0"
+edition = "2021"
+description = "Agent wrapper: bootstrap line → chroot(rootfs) → exec kimi acp (§5.4)"
+
+[dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3"

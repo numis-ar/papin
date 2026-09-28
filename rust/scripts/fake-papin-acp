@@ -1,0 +1,306 @@
+#!/usr/bin/env python3
+"""fake-papin-acp: dev/test ACP v1 agent over stdio NDJSON (no systemd/root).
+
+Implements the subset papin-gateway needs for M1:
+  initialize/initialized, session/new, session/load, session/prompt (canned
+  session/update stream + stop), session/cancel, $/cancel_request,
+  fs/read_text_file, fs/write_text_file, and an agent->client
+  session/request_permission reverse-RPC.
+
+Special prompts:
+  "crash"  -> exit(0) mid-turn (gateway crash-healing test)
+  "loop"   -> stream updates until cancelled (cancel test)
+  "permission" -> ask the client for permission before finishing (reverse-RPC test)
+"""
+
+import json
+import sys
+import threading
+import time
+
+PROTOCOL_VERSION = 1
+
+STATE = {
+    "next_session": 0,
+    "sessions": {},  # sid -> {"prompts": [text, ...]}
+    "turn": None,  # {"id": rid, "session": sid, "cancelled": bool}
+    "perm_counter": 0,
+    "modes": {},  # sid -> mode_id
+    "options": {},  # (sid, config_id) -> value
+    "models": {},  # sid -> model_id
+}
+LOCK = threading.Lock()
+
+
+def send(obj):
+    with LOCK:
+        sys.stdout.write(json.dumps(obj) + "\n")
+        sys.stdout.flush()
+
+
+def session_update(sid, update):
+    send({
+        "sessionId": sid,
+        "method": "session/update",
+        "params": {"sessionId": sid, "update": update},
+    })
+
+
+def text_of(prompt):
+    parts = []
+    for block in prompt or []:
+        if isinstance(block, dict):
+            if "text" in block:
+                parts.append(block["text"])
+            elif block.get("type") == "text" and "text" in block:
+                parts.append(block["text"])
+    if isinstance(prompt, str):
+        return prompt
+    return " ".join(parts)
+
+
+def canned_turn(mid, sid, prompt_text):
+    session_update(sid, {
+        "sessionUpdate": "agent_thought_chunk",
+        "content": {"type": "text", "text": "Thinking about: " + prompt_text},
+    })
+    session_update(sid, {
+        "sessionUpdate": "tool_call",
+        "toolCallId": "call-1",
+        "title": "echo hello",
+        "kind": "execute",
+        "status": "pending",
+    })
+    session_update(sid, {
+        "sessionUpdate": "tool_call_update",
+        "toolCallId": "call-1",
+        "status": "completed",
+        "content": [{"type": "text", "text": "hello\n"}],
+    })
+    session_update(sid, {
+        "sessionUpdate": "agent_message_chunk",
+        "content": {"type": "text", "text": "Fake response to: " + prompt_text},
+    })
+    send({"id": mid, "sessionId": sid, "result": {"stopReason": "end_turn"}})
+
+
+def streaming_thread(mid, sid):
+    n = 0
+    while True:
+        with LOCK:
+            turn = STATE["turn"]
+        if turn is None or turn.get("cancelled"):
+            return
+        n += 1
+        session_update(sid, {
+            "sessionUpdate": "agent_message_chunk",
+            "content": {"type": "text", "text": f"tick {n}\n"},
+        })
+        time.sleep(0.02)
+
+
+def cancel_turn():
+    with LOCK:
+        turn = STATE["turn"]
+        if turn is not None:
+            turn["cancelled"] = True
+            STATE["turn"] = None
+            return turn
+    return None
+
+
+def handle(msg):
+    method = msg.get("method")
+    mid = msg.get("id")
+    params = msg.get("params") or {}
+
+    # Client response to our reverse-RPC (no method, matching id).
+    if method is None and mid is not None:
+        return
+
+    if mid is None:
+        # Notifications.
+        if method == "initialized":
+            return
+        if method == "$/cancel_request":
+            cancel = cancel_turn()
+            if cancel:
+                send({
+                    "id": cancel["id"],
+                    "sessionId": cancel["session"],
+                    "error": {"code": -32800, "message": "Turn cancelled"},
+                })
+            return
+        return
+
+    if method == "initialize":
+        proto = params.get("protocolVersion", PROTOCOL_VERSION)
+        if proto != PROTOCOL_VERSION:
+            send({"id": mid, "error": {
+                "code": -32602,
+                "message": f"unsupported protocolVersion {proto}",
+            }})
+            return
+        send({"id": mid, "result": {
+            "protocolVersion": PROTOCOL_VERSION,
+            "capabilities": {
+                "fs": {"readTextFile": True, "writeTextFile": True},
+                "terminal": True,
+                "mcp": {},
+                "elicitation": True,
+            },
+            "agentInfo": {"name": "fake-papin", "version": "0.1.0"},
+        }})
+        return
+
+    if method == "session/new":
+        STATE["next_session"] += 1
+        sid = "fake-%d" % STATE["next_session"]
+        STATE["sessions"][sid] = {"prompts": []}
+        send({"id": mid, "sessionId": sid, "result": {"sessionId": sid}})
+        return
+
+    if method == "session/load":
+        sid = params.get("sessionId")
+        # Replay burst: history arrives as session/update notifications before
+        # the response (native ACP v1 resume replay).
+        session = STATE["sessions"].get(sid, {"prompts": []})
+        for text in session["prompts"]:
+            session_update(sid, {
+                "sessionUpdate": "agent_message_chunk",
+                "content": {"type": "text", "text": "replay: " + text},
+            })
+        send({"id": mid, "sessionId": sid, "result": {"sessionId": sid}})
+        return
+
+    if method == "session/list":
+        send({"id": mid, "result": {"sessions": [
+            {"sessionId": sid, "title": "Fake session " + sid}
+            for sid in STATE["sessions"]
+        ]}})
+        return
+
+    if method == "session/set_mode":
+        sid = params.get("sessionId")
+        STATE["modes"][sid] = params.get("modeId")
+        send({"id": mid, "sessionId": sid, "result": {}})
+        return
+
+    if method == "session/set_config_option":
+        sid = params.get("sessionId")
+        STATE["options"][(sid, params.get("configId"))] = params.get("value")
+        send({"id": mid, "sessionId": sid, "result": {}})
+        return
+
+    if method == "session/close":
+        sid = params.get("sessionId")
+        send({"id": mid, "sessionId": sid, "result": {}})
+        return
+
+    if method == "session/delete":
+        sid = params.get("sessionId")
+        STATE["sessions"].pop(sid, None)
+        send({"id": mid, "sessionId": sid, "result": {}})
+        return
+
+    if method == "session/set_model":
+        # kimi extension: passthrough (PLAN §3).
+        sid = params.get("sessionId")
+        STATE["models"][sid] = params.get("modelId")
+        send({"id": mid, "sessionId": sid, "result": {}})
+        return
+
+    if method == "session/prompt":
+        sid = params.get("sessionId")
+        prompt_text = text_of(params.get("prompt"))
+        STATE["sessions"].setdefault(sid, {"prompts": []})["prompts"].append(prompt_text)
+
+        if prompt_text == "crash":
+            sys.exit(0)
+
+        if prompt_text == "loop":
+            with LOCK:
+                STATE["turn"] = {"id": mid, "session": sid, "cancelled": False}
+            threading.Thread(target=streaming_thread, args=(mid, sid), daemon=True).start()
+            return
+
+        if prompt_text == "permission":
+            STATE["perm_counter"] += 1
+            perm_id = "perm-%d" % STATE["perm_counter"]
+            send({
+                "id": perm_id,
+                "sessionId": sid,
+                "method": "session/request_permission",
+                "params": {
+                    "sessionId": sid,
+                    "toolCall": {
+                        "toolCallId": "call-perm",
+                        "title": "rm -rf something",
+                        "kind": "execute",
+                        "status": "pending",
+                    },
+                    "options": [
+                        {"optionId": "once", "name": "Allow once", "kind": "allow_once"},
+                        {"optionId": "always", "name": "Allow always", "kind": "allow_always"},
+                        {"optionId": "reject", "name": "Reject", "kind": "reject_once"},
+                    ],
+                },
+            })
+            # Turn continues once the client response arrives (handled below in
+            # the no-method branch) — see handle_response.
+            with LOCK:
+                STATE["turn"] = {"id": mid, "session": sid, "cancelled": False,
+                                 "awaiting_perm": perm_id}
+            return
+
+        canned_turn(mid, sid, prompt_text)
+        return
+
+    if method == "session/cancel":
+        turn = cancel_turn()
+        if turn is not None:
+            send({"id": turn["id"], "sessionId": turn["session"],
+                  "error": {"code": -32800, "message": "Turn cancelled"}})
+        send({"id": mid, "result": {}})
+        return
+
+    if method == "fs/read_text_file":
+        send({"id": mid, "result": {"content": "fake file contents\n"}})
+        return
+
+    if method == "fs/write_text_file":
+        send({"id": mid, "result": {}})
+        return
+
+    send({"id": mid, "error": {"code": -32601, "message": f"unknown method {method}"}})
+
+
+def handle_response(msg):
+    """A client response: either to a reverse-RPC or a stray response."""
+    mid = msg.get("id")
+    with LOCK:
+        turn = STATE["turn"]
+    if turn and turn.get("awaiting_perm") == mid:
+        cancel_turn()
+        canned_turn(turn["id"], turn["session"], "permission granted")
+
+
+def main():
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            msg = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if msg.get("method") is None and msg.get("id") is not None:
+            handle_response(msg)
+        else:
+            handle(msg)
+    # stdin EOF: exit cleanly (gateway dropped the connection).
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

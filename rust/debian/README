@@ -1,0 +1,46 @@
+Building the Debian packages
+============================
+
+Two binary packages from one native source package (`papin`):
+
+  * `papin-cli`     — the terminal client (the binary is `/usr/bin/papin`).
+                     No systemd, no root.
+  * `papin-gateway` — the server: gateway daemon + chroot wrapper under
+                     `/usr/lib/papin/`, the setuid enroll helper at
+                     `/usr/local/lib/papin/papin-enroll-helper`
+                     (root:root 4755, applied in postinst — dh cannot set
+                     setuid at install time), the three systemd units,
+                     `/etc/papin/gateway.toml` (conffile; the mutable
+                     tokens file lives at `/var/lib/papin/tokens.toml`
+                     and is NOT a conffile), tmpfiles for `/run`, docs, and
+                     the add-peer / e2e.sh tooling.
+
+Build
+-----
+
+Run from `rust/` (the cargo workspace IS the Debian source tree):
+
+    cd rust
+    dpkg-buildpackage -us -uc -b
+
+or `make -C rust deb`. The .debs land in the repo root (parent of `rust/`).
+
+or, from a clean tree without build-dep checks:
+
+    dpkg-buildpackage -us -uc -b -d
+
+Notes:
+
+  * The Rust build runs `cargo build --release` against the workspace at
+    `./` via `override_dh_auto_build`. It honors `CARGO_TARGET_DIR` if
+    set (e.g. a tmpfs target dir); otherwise the workspace default
+    (`rust/target`) is used. dh-cargo is NOT used — plain cargo keeps the
+    build identical to development builds. Crates come from crates.io, so
+    the build needs network access (or a prepared cargo cache/vendor setup;
+    vendoring is not configured here).
+  * `Architecture: amd64` — the packages build host binaries; there is no
+    cross-compilation setup.
+  * Install with `sudo dpkg -i papin-cli_*.deb papin-gateway_*.deb` from the
+    repo root (or via a local apt repo). Remove with
+    `sudo apt purge papin-gateway papin-cli` — purge also drops the
+    `papin-gateway` system user and `/var/lib/papin-gateway`.

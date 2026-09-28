@@ -1,0 +1,21 @@
+[package]
+name = "integration-tests"
+version = "0.1.0"
+edition = "2021"
+description = "Cross-crate integration tests (FakeProvider-based; no systemd/root)"
+publish = false
+
+[dependencies]
+acp-wire = { path = "../../crates/acp-wire" }
+papin-gateway = { path = "../../crates/papin-gateway" }
+tokio = { workspace = true, features = ["test-util"] }
+serde_json = "1"
+tempfile = "3"
+libc = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+http = "1"
+bytes = "1"
+axum = "0.8"
+tower = { version = "0.5", features = ["util"] }

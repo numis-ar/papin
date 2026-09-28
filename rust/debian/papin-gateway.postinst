@@ -1,0 +1,36 @@
+#!/bin/sh
+# postinst for the papin-gateway package: system user, state dirs, tokens file, setuid
+# helper, then debhelper's systemd snippets (enable + start).
+set -e
+
+case "$1" in
+    configure)
+        if ! getent passwd papin >/dev/null; then
+            adduser --system --group --home /var/lib/papin \
+                --no-create-home --shell /usr/sbin/nologin \
+                --gecos "papin agent facade" papin
+        fi
+
+        # State tree (registry, rootfs base catalog, workspace seeds).
+        install -d -m 0755 -o papin -g papin /var/lib/papin
+        install -d -m 0755 -o papin -g papin /var/lib/papin/agents
+        install -d -m 0755 -o papin -g papin /var/lib/papin/rootfs
+        install -d -m 0755 -o papin -g papin /var/lib/papin/rootfs/base
+        install -d -m 0755 -o papin -g papin /var/lib/papin/workspaces
+
+        # Device tokens: mutable runtime data, root:papin 0640.
+        if [ ! -f /var/lib/papin/tokens.toml ]; then
+            install -m 0640 -o root -g papin /dev/null /var/lib/papin/tokens.toml
+        fi
+
+        # Runtime dir (also recreated at boot by tmpfiles.d).
+        install -d -m 0755 -o root -g root /run/papin
+        install -d -m 0770 -o root -g papin /run/papin/wg-peers
+
+        # The ONLY root-capable component: root-owned, setuid (§7.1).
+        chown root:root /usr/local/lib/papin/papin-enroll-helper
+        chmod 4755 /usr/local/lib/papin/papin-enroll-helper
+        ;;
+esac
+
+#DEBHELPER#

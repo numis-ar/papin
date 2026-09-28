@@ -1,0 +1,22 @@
+provider = "spawn"
+state_dir = "/var/lib/papin"
+agents_root = "/var/lib/papin/agents"
+bases_dir = "/var/lib/papin/rootfs/base"
+seeds_dir = "/var/lib/papin/workspaces"
+socket_path = "/run/papin/agent.sock"
+# Mutable runtime data — deliberately NOT a conffile (lives under /var).
+tokens_file = "/var/lib/papin/tokens.toml"
+listen = "10.77.0.1:8080"
+idle_timeout_secs = 600
+token_ttl_secs = 2592000
+
+[catalog]
+bases = []
+seeds = []
+env = []
+
+# WireGuard enrollment (§7.1); the helper is the one root-owned setuid file.
+wg_gateway_ip = "10.77.0.1"
+wg_client_pool = "10.77.0.0/24"
+wg_endpoint = "vpn.example.com:51820"
+enroll_helper = "/usr/local/lib/papin/papin-enroll-helper"

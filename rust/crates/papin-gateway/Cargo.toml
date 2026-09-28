@@ -1,0 +1,26 @@
+[package]
+name = "papin-gateway"
+version = "0.1.0"
+edition = "2021"
+description = "papin-gateway: per-agent ACP façade proxy over a connection manager"
+
+[dependencies]
+acp-wire = { path = "../acp-wire" }
+papin-enroll-helper = { path = "../papin-enroll-helper" }
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+async-trait.workspace = true
+axum = { version = "0.8", features = ["ws"] }
+tower = "0.5"
+toml = "0.8"
+libc = "0.2"
+futures-util = "0.3"
+clap = { version = "4", features = ["derive"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+tempfile = "3"
+tracing-subscriber = "0.3"

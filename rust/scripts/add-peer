@@ -1,0 +1,97 @@
+#!/bin/bash
+# add-peer: mint a device token + assigned WireGuard IP for a new client and
+# print a provisioning link (+ QR). Does NOT touch wg0 — the gateway installs
+# the peer on first enrollment (POST /api/v1/enroll, §7.1).
+#
+# Usage: add-peer [--name <client-name>]
+set -euo pipefail
+
+NAME="client"
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --name) NAME="$2"; shift 2 ;;
+        *) echo "usage: add-peer [--name <client-name>]" >&2; exit 1 ;;
+    esac
+done
+
+CONF=/etc/papin/gateway.toml
+TOKENS=/var/lib/papin/tokens.toml
+
+[[ $EUID -eq 0 ]] || { echo "error: add-peer writes $TOKENS; run as root" >&2; exit 1; }
+[[ -f $CONF ]] || { echo "error: $CONF missing; install the papin-gateway package first" >&2; exit 1; }
+install -d -m 0755 -o root -g papin-gateway /var/lib/papin-gateway 2>/dev/null || install -d -m 0755 /var/lib/papin-gateway
+touch "$TOKENS"; chmod 0640 "$TOKENS"; chown root:papin-gateway "$TOKENS" 2>/dev/null || true
+
+get_conf() {  # tiny toml scalar reader
+    local key="$1"
+    sed -n -E "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*\"([^\"]*)\".*/\1/p" "$CONF" | head -n1
+}
+
+GATEWAY_IP="$(get_conf wg_gateway_ip)"
+POOL="$(get_conf wg_client_pool)"
+ENDPOINT="$(get_conf wg_endpoint)"
+TTL="$(get_conf token_ttl_secs)"; TTL="${TTL:-2592000}"
+[[ -n $GATEWAY_IP && -n $POOL && -n $ENDPOINT ]] || {
+    echo "error: wg_gateway_ip / wg_client_pool / wg_endpoint must be set in $CONF" >&2; exit 1;
+}
+
+SERVER_PUBKEY="$(wg show wg0 public-key 2>/dev/null)" || {
+    echo "error: cannot read server public key — is wg0 up? (see operations.md)" >&2; exit 1;
+}
+
+# Allocate the lowest free address in the pool (excludes network/gateway).
+USED_IPS="$(sed -n -E 's/^[[:space:]]*assigned_ip[[:space:]]*=[[:space:]]*"([^"]*)".*/\1/p' "$TOKENS" 2>/dev/null || true)"
+CLIENT_IP="$(python3 - "$POOL" "$GATEWAY_IP" <<'PY'
+import ipaddress, sys
+pool = ipaddress.ip_network(sys.argv[1])
+gateway = ipaddress.ip_address(sys.argv[2])
+used = set()
+try:
+    import re
+    with open("/var/lib/papin/tokens.toml") as f:
+        used = {ipaddress.ip_address(m) for m in re.findall(r'assigned_ip\s*=\s*"([^"]+)"', f.read())}
+except FileNotFoundError:
+    pass
+for host in pool.hosts():
+    if host != gateway and host not in used:
+        print(host)
+        break
+else:
+    sys.exit("pool exhausted")
+PY
+)" || { echo "error: no free IPs in pool $POOL" >&2; exit 1; }
+
+TOKEN="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+
+touch "$TOKENS"
+TMP="$(mktemp "${TOKENS}.XXXXXX")"
+chmod 0640 "$TMP"; chown root:papin-gateway "$TMP"
+NOW="$(date +%s)"
+EXPIRES=$((NOW + TTL))
+{
+    cat "$TOKENS"
+    printf '\n[[tokens]]\n'
+    printf 'token = "%s"\n' "$TOKEN"
+    printf 'created_at = %s\n' "$NOW"
+    printf 'expires_at = %s\n' "$EXPIRES"
+    printf 'assigned_ip = "%s"\n' "$CLIENT_IP"
+    printf 'name = "%s"\n' "$NAME"
+} > "$TMP"
+mv "$TMP" "$TOKENS"
+
+# Provisioning link. The client generates its own WireGuard keypair; the QR
+# never carries a private key (§7.1).
+LINK="papin://enroll?endpoint=${ENDPOINT}&server_pubkey=${SERVER_PUBKEY}&gateway_ip=${GATEWAY_IP}&client_ip=${CLIENT_IP}&token=${TOKEN}"
+
+echo "peer '$NAME' provisioned:"
+echo "  assigned ip : $CLIENT_IP"
+echo "  token       : $TOKEN (expires in $TTL seconds)"
+echo
+echo "provisioning link:"
+echo "  $LINK"
+echo
+if command -v qrencode >/dev/null 2>&1; then
+    qrencode -t ANSIUTF8 "$LINK"
+else
+    echo "(install 'qrencode' to print a QR code)"
+fi

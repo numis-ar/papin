@@ -1,0 +1,17 @@
+[package]
+name = "acp-wire"
+version = "0.1.0"
+edition = "2021"
+description = "ACP v1 wire types, NDJSON codec, and WebSocket transport helpers"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tokio-tungstenite = "0.26"
+http = "1"
+futures-util = "0.3"
+tracing.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }

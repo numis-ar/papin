@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">Papin</string>
+    <string name="channel_questions">Agent questions</string>
+    <string name="channel_turns">Turn updates</string>
+    <string name="fg_service_title">Papin agent connected</string>
+    <string name="fg_service_text">Holding the agent connection while backgrounded.</string>
+</resources>

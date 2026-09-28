@@ -1,0 +1,36 @@
+[Unit]
+Description=Papin ACP agent (connection %i)
+
+[Service]
+Type=exec
+ExecStart=/usr/lib/papin/papin-acp-enter
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal
+# ── identity ──
+# fresh random uid per spawned instance — per-agent uid separation
+DynamicUser=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_SYS_CHROOT CAP_DAC_OVERRIDE
+AmbientCapabilities=CAP_SYS_CHROOT CAP_DAC_OVERRIDE
+# ── sandbox (pre-chroot host view; the chroot is the real jail) ──
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+RestrictRealtime=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service chroot chdir
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+UMask=0022
+# ── resource caps (uniform for all agents) ──
+MemoryMax=4G
+TasksMax=256
+# EOF (gateway disconnect) is the clean-exit signal
+Restart=no
+TimeoutStopSec=10

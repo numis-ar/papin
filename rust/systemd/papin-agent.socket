@@ -1,0 +1,10 @@
+[Socket]
+ListenStream=/run/papin/agent.sock
+Accept=yes
+SocketGroup=papin
+SocketMode=0660
+DirectoryMode=0755
+MaxConnections=64
+
+[Install]
+WantedBy=sockets.target
